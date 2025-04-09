@@ -1,0 +1,1733 @@
+
+---
+title: "scRNA-seq Analysis for Kameneva Lab PhD Selection"
+author: "Adam Adonyi"
+date: "April 2025"
+output:
+  pdf_document:
+    fig_width: 10
+    fig_height: 6
+    fig_caption: yes
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.show = 'hold',
+  eval = TRUE
+)
+```
+
+
+
+# SECTION_0: Preparation of environment: loading all essential packages
+
+```{r}
+suppressPackageStartupMessages({
+  library(Seurat)
+  library(hdf5r)
+  library(dplyr)
+  library(ggplot2)
+  library(gridExtra)
+  library(grid)
+  library(tidyr)
+  library(SingleR)
+  library(pheatmap)
+  library(patchwork)
+  library(SeuratDisk)
+  library(DoubletFinder)
+  library(scDblFinder)
+  library(SingleCellExperiment)
+  library(org.Hs.eg.db)  
+  library(AnnotationDbi)
+  library(GO.db)
+  library(celldex)
+  library(BiocParallel)
+  library(slingshot)
+  library(tradeSeq)
+  library(SCENIC)
+  library(AUCell)
+  library(RcisTarget)
+  library(conos)
+  library(openxlsx)
+  library(readxl)
+  library(scales)
+  library(writexl)
+  library(pagoda2)
+  library(scater) 
+})
+
+
+```
+
+# SECTION_1: handling RAW.tar file, generating seurat object with all data, save as backup
+
+Download the datasets following the link:
+https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE147821
+Sample name includes the developmental stage in weeks and the internal ID.
+week8_001 – this sample is collected from week 8 of development and ID is 001.
+Some developmental stages have replicates.
+
+Rendering is unable to handl the pre processing part therefore I had to comment out when I generated the pdf from my Markdown.
+
+Taken together, I opened up the RAW.tar file then loaded all h5 file to generate seurat objects then combined them.
+To be able to track the samples I added metadata furthermore I calculated and assigned mitocondrial content.
+
+```{r}
+# processing RAW.tar file to extracted format
+
+#file.exists("~/Downloads/GSE147821_RAW.tar")
+#untar("Downloads/GSE147821_RAW.tar", exdir = "Downloads/GSE147821_extracted")
+```
+
+```{r}
+# # Generate Seurat object with metadata, combine them into one object and calculate mitochondrial content (mt) as first step of QC
+
+# # folder_path <- "/Users/adamadonyi/Downloads/GSE147821_extracted"
+
+# # Define GSM to week_id mapping
+# sample_names <- c(
+#   "GSM4446535" = "week8_001",
+#   "GSM4446536" = "week9_063",
+#   "GSM4446537" = "week6_088",
+#   "GSM4446538" = "week14_123",
+#   "GSM4446539" = "week12_124",
+#   "GSM4446540" = "week8_125",
+#   "GSM4446541" = "week9_005",
+#   "GSM4446542" = "week11_006",
+#   "GSM4446543" = "week9_007",
+#   "GSM4734601" = "week8_016",
+#   "GSM4734602" = "week9_031_paraganglia",
+#   "GSM4734603" = "week12_035",
+#   "GSM4734604" = "week12_036_extraadrenal"
+# )
+
+# # List all H5 files 
+# file_list <- list.files(path = folder_path, pattern = "*.h5$", full.names = TRUE)
+
+# # Initialize a list 
+# seurat_list <- list()
+
+# # Process each file and create Seurat objects
+# for (file_path in file_list) {
+#   # Extract GSM from the file path
+#   gsm <- gsub(".*/(GSM[0-9]+)_.*", "\\1", file_path)
+  
+#   # Get the sample name
+#   sample_name <- sample_names[gsm]
+  
+#   # Extract week and ID
+#   week <- as.numeric(gsub("week([0-9]+)_.*", "\\1", sample_name))
+#   id <- gsub("week[0-9]+_([0-9]+.*)", "\\1", sample_name)
+  
+#   # Print progress to be able to track process
+#   cat("Processing:", gsm, "as", sample_name, "- Week:", week, "ID:", id, "\n")
+  
+#   # Read the 10X h5 file --> Seurat object
+#   tryCatch({
+#     # Read data
+#     data <- Read10X_h5(file_path)
+    
+#     # Create initial Seurat object
+#     seurat_obj <- CreateSeuratObject(
+#       counts = data,
+#       project = sample_name,
+#       min.cells = 3,
+#       min.features = 200
+#     )
+    
+#     # Add metadata !
+#     # First create a data frame with metadata for each cell
+#     cell_ids <- colnames(seurat_obj)
+#     metadata_df <- data.frame(
+#       gsm = rep(gsm, length(cell_ids)),
+#       sample = rep(sample_name, length(cell_ids)),
+#       week = rep(week, length(cell_ids)),
+#       id = rep(id, length(cell_ids)),
+#       row.names = cell_ids
+#     )
+    
+#     # Add metadata to Seurat object
+#     seurat_obj <- AddMetaData(seurat_obj, metadata = metadata_df)
+    
+#     # Add to list (add comment to be able to track the loading)
+#     seurat_list[[gsm]] <- seurat_obj
+    
+#     cat("Successfully processed", gsm, "\n")
+#   }, error = function(e) {
+#     cat("Error processing", gsm, ":", e$message, "\n")
+#   })
+# }
+
+# # Merge all Seurat objects into one (only if there are objects in the list, > for that)
+# if (length(seurat_list) > 0) {
+#   # Merge all objects
+#   cat("Merging", length(seurat_list), "Seurat objects...\n")
+  
+#   if (length(seurat_list) == 1) {
+#     combined_seurat <- seurat_list[[1]]
+#   } else {
+#     combined_seurat <- merge(
+#       x = seurat_list[[1]],
+#       y = seurat_list[-1],
+#       add.cell.ids = names(seurat_list),
+#       project = "GSE147821"
+#     )
+#   }
+  
+#   # Calculate percentage of mitochondrial genes as first step of QC
+#   combined_seurat[["percent.mt"]] <- PercentageFeatureSet(combined_seurat, pattern = "^MT-")
+  
+#   # Print summary of the combined object
+#   cat("\nCombined Seurat object:\n")
+#   print(combined_seurat)
+  
+#   # Check metadata columns
+#   cat("\nMetadata columns:\n")
+#   print(colnames(combined_seurat@meta.data))
+  
+#   # Show a sample of the metadata
+#   cat("\nSample of metadata:\n")
+#   print(head(combined_seurat@meta.data))
+# } else {
+#   cat("No Seurat objects were created. Check for errors above.\n")
+# }
+
+# # Remove the "sample" column from metadata since it is duplicated
+# combined_seurat$sample <- NULL
+
+```
+
+```{r}
+# Inspection of object 
+#head(combined_seurat@meta.data)
+```
+
+
+```{r}
+# All data should be loaded (13)
+#unique(combined_seurat@meta.data$orig.ident)
+
+```
+
+
+```{r}
+# Save the Seurat object as check point
+#saveRDS(combined_seurat, file = "/Users/adamadonyi/Downloads/GSE147821_combined_seurat.rds")
+```
+
+
+
+# SECTION_2: QC and cell cycle correction
+Perform data normalization (consider cell cycle correction) and quality control,
+data cleaning.
+
+First I visualized each sample to inspect the nCount_RNA, nFeature_RNA and mitocondrial content
+
+
+
+```{r}
+# Load previously saved data (combined objects with the calculated mt content)
+combined_seurat <- readRDS("/Users/adamadonyi/Downloads/GSE147821_combined_seurat.rds")
+
+```
+
+```{r}
+# define specific order of the samples
+custom_order <- unique(combined_seurat@meta.data[order(combined_seurat@meta.data$week), "orig.ident"])
+
+```
+
+```{r}
+# visualization of nCount_RNA
+VlnPlot(combined_seurat, features = c("nCount_RNA"), 
+        group.by = "orig.ident", 
+        pt.size = 0) + 
+  scale_x_discrete(limits = custom_order) +  # Reorder X-axis
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+# visualization of nFeature_RNA
+VlnPlot(combined_seurat, features = c("nFeature_RNA"), 
+        group.by = "orig.ident", 
+        pt.size = 0) + 
+  scale_x_discrete(limits = custom_order) +  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# visualization of percent.mt
+VlnPlot(combined_seurat, features = c("percent.mt"), 
+        group.by = "orig.ident", 
+        pt.size = 0) + 
+  scale_x_discrete(limits = custom_order) +  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+To be able to define thresholds for QC sub setting, I implement three time median absolute deviation on nCount_RNA, nFeature_RNA, and percent.mt. The calculated thresholds helped to define the parameters for sub setting.
+
+```{r}
+# Calculate thresholds using median absolute deviation (MAD)
+max.count.thr <- median(combined_seurat$nCount_RNA) + 3*mad(combined_seurat$nCount_RNA)
+min.count.thr <- median(combined_seurat$nCount_RNA) - 3*mad(combined_seurat$nCount_RNA)
+
+max.feature.thr <- median(combined_seurat$nFeature_RNA) + 3*mad(combined_seurat$nFeature_RNA)
+min.feature.thr <- median(combined_seurat$nFeature_RNA) - 3*mad(combined_seurat$nFeature_RNA)
+
+max.mito.thr <- median(combined_seurat$percent.mt) + 3*mad(combined_seurat$percent.mt)
+min.mito.thr <- median(combined_seurat$percent.mt) - 3*mad(combined_seurat$percent.mt)
+```
+
+After calculation, I visualized the thresholds with their corresponding data category.
+
+```{r}
+# Create feature count plot
+g_feature <- ggplot(as.data.frame(combined_seurat@meta.data))
+g_feature <- g_feature + geom_histogram(aes(x=nFeature_RNA, y= ..density..),bins=200,fill = "grey")
+g_feature <- g_feature + geom_density(aes(x=nFeature_RNA)) 
+g_feature <- g_feature + 
+  geom_vline(xintercept = min.feature.thr, color="red") +
+  geom_vline(xintercept = max.feature.thr, color="blue") +
+  ggtitle("Gene Features") +
+  theme_minimal()
+
+# Create count plot
+g_count <- ggplot(as.data.frame(combined_seurat@meta.data))
+g_count <- g_count + geom_histogram(aes(x=nCount_RNA, y= ..density..),bins=200,fill = "grey")
+g_count <- g_count + geom_density(aes(x=nCount_RNA)) 
+g_count <- g_count + 
+  geom_vline(xintercept = min.count.thr, color="red") + 
+  geom_vline(xintercept = max.count.thr, color="blue") +
+  ggtitle("RNA Counts") +
+  theme_minimal()
+
+# Create mitochondrial percentage plot
+g_mito <- ggplot(as.data.frame(combined_seurat@meta.data))
+g_mito <- g_mito + geom_histogram(aes(x=percent.mt, y= ..density..),bins=200,fill = "grey")
+g_mito <- g_mito + geom_density(aes(x=percent.mt)) 
+g_mito <- g_mito + 
+  geom_vline(xintercept = min.mito.thr, color="red") + 
+  geom_vline(xintercept = max.mito.thr, color="blue") +
+  ggtitle("Mitochondrial %") +
+  theme_minimal()
+```
+
+```{r}
+# display them in a grid arrangement
+grid_plot <- grid.arrange(g_feature, g_count, g_mito, ncol = 3)
+```
+
+```{r}
+# Print threshold values for reference
+cat("Count thresholds:", min.count.thr, "-", max.count.thr, "\n") #1000 - 18054 -->but 15000?
+cat("Feature thresholds:", min.feature.thr, "-", max.feature.thr, "\n") #200-3700
+cat("Mitochondrial % thresholds:", min.mito.thr, "-", max.mito.thr, "\n") # 0-23.10
+
+
+```
+
+Count thresholds: -10864.8 & 18054.8 --> used from 1000 to 15 000 (I thought 18 000 would increase the chance to introduce too much noise to the data which can cause problems later. Furthermore, I had to keep in mind the lack of computational power since I run on a local pc. I did not do any comparison because of the lack of time. It would be nice to investigate the differences)
+
+Feature thresholds: I used the upper calculated threshold. Lower bond for 200 is from the standard Seurat pipeline recommendation. Upper bond is 3700.
+
+Mitochondrial percentage thresholds: According to the visual-given gut feeling, 25% would be the best cut for me, and MAD supported the same range therefore went for the calculated 23.1.
+
+I used those numbers for sub setting my data set.
+
+```{r}
+# Subset with the mentioned thresholds and going into section 3
+combined_seurat <- subset(combined_seurat, subset = nFeature_RNA > 200 & nFeature_RNA < 3700 & percent.mt < 23.1 & nCount_RNA > 1000 & nCount_RNA < 15000)
+
+```
+
+
+SECTION_2.2: Cell cycle correction and final steps of standard scRNAseq pipeline
+
+Seurat build in gene collection supports us to implement the cell cycle scoring. I used to assign potential cell cycle status to each cell. Visualized full data set before and after the regression. (Original documentation recommend PC on the suppressed genes only - which did not work for me. As an alternative solution I visualized the PC1 & PC2 using the full data set which showed alteration therefore the regression was a proper step). 
+
+```{r}
+# cell cycle correction
+
+combined_seurat <- NormalizeData(combined_seurat)
+DefaultAssay(combined_seurat) <- "RNA"
+
+# Join the layers  (as suggested by the error message!)
+combined_seurat <- JoinLayers(object = combined_seurat)
+
+# Assigning genes from Seurat package for cell cycle scoring
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+
+# Run the Scoring 
+combined_seurat <- CellCycleScoring(combined_seurat, 
+                                    s.features = s.genes, 
+                                    g2m.features = g2m.genes)
+
+# Visualize the cell cycle effect before correction 
+combined_seurat <- FindVariableFeatures(combined_seurat)
+combined_seurat <- ScaleData(combined_seurat)
+combined_seurat <- RunPCA(combined_seurat) # running the PCA only on the s.genes and g2m.genes does not work therefore I use full data
+DimPlot(combined_seurat, reduction = "pca", group.by = "Phase")
+```
+
+
+
+```{r}
+# Regress out cell cycle effects during scaling
+combined_seurat <- ScaleData(combined_seurat, 
+                             vars.to.regress = c("S.Score", "G2M.Score"))
+
+# Run PCA again and check if cell cycle effect is reduced
+combined_seurat <- RunPCA(combined_seurat) # running the PCA only on the s.genes and g2m.genes does not work 
+DimPlot(combined_seurat, reduction = "pca", group.by = "Phase")
+
+
+```
+DoubletFinder DID NOT WORK - I REACHED THE MAX 16GB RAM therefore I did not use the package here as next step - HPC could provide enough computational memory for the data set. Other option would be parallel computing but I did not spend time on the optimization. Doublet removal will be implemented when I subset the data to investigate only the SCP, chromaffin and sympathoblast populations.
+
+```{r}
+
+# get the latest version
+#if (!requireNamespace("remotes", quietly = TRUE)) {
+#  install.packages("remotes")
+#}
+#remotes::install_github("chris-mcginnis-ucsf/DoubletFinder")
+
+#library(DoubletFinder)
+
+# Run after normalization and PCA but before clustering!!!!
+# For the current version, use these functions:
+#sweep.res <- paramSweep(combined_seurat, PCs = 1:15, sct = FALSE)
+#sweep.stats <- summarizeSweep(sweep.res, GT = FALSE)
+#bcmvn <- find.pK(sweep.stats)
+#optimal_pk <- bcmvn$pK[which.max(bcmvn$BCmetric)]
+
+# Run DoubletFinder 
+#combined_seurat <- doubletFinder(combined_seurat, 
+#                                 PCs = 1:15, 
+#                                 pN = 0.05,         # adjusted from 0.25 overloaded the RAM - DO NOT WORK-----
+#                                 pK = optimal_pk, 
+#                                 nExp = round(0.075*ncol(combined_seurat)))
+
+
+```
+
+ElbowPlot shows the PCs with standard deviation to pick the optimal dimensionality. 
+
+```{r}
+# Elbow to determine the PCs for the next steps
+ElbowPlot(combined_seurat)
+
+# tested with 15 but went for 10 because of computational manner.
+```
+
+First I ran resolution=0.5 then 0.3 but ended up using 0.2 to get the proper depth. 0.5 gives more than 23 clusters which could lead to a lot of confusion in case of annotation.
+
+```{r}
+# Further steps of standard scRNAseq pipeline -  dims 10, cluster resolution 0.2
+combined_seurat <- FindNeighbors(combined_seurat, dims = 1:10)
+combined_seurat <- FindClusters(combined_seurat, resolution = 0.2) # adjusted resolution from default 0.5 (tested, 0.3, but used 0.2)
+combined_seurat <- RunUMAP(combined_seurat, dims = 1:10)
+
+```
+
+Visualization section after finishing the standard scRNAseq pipeline comparing orig.idents, time course (weeks), and identified clusters using UMAP.
+
+```{r}
+# Visual based on the origi.ident
+DimPlot(combined_seurat, reduction = "umap", group.by = "orig.ident")
+
+```
+
+```{r}
+# Visual based on the time course
+DimPlot(combined_seurat, reduction = "umap", group.by  = "week")
+```
+
+
+```{r}
+# Visual based on the identified clusters
+DimPlot(combined_seurat, reduction = "umap")
+
+```
+Overall, 15 Cluster identified (resolution 0.5 resulted more than 23 clusters which provide a deeper insight to the data but for my purpose 15 cluster should be enough). Considering the biological composition based on the given papers, the 15 clusters seemed reasonable for further analysis. 
+
+To further investigate clusters and their signature markers, I was run FindAllMarkers comparing all clusters with all then showed the top 5 genes. This graph is going to be shown in the section 4 following the structure of the instruction from the given mail.
+
+Considering the restricted access to computational power I was focusing on only the positively regulated genes. 
+Optimal speed up solution for further investigation would be defining min.pct (0.1-0.3) which only test genes that are detected in a minimum fraction of min.pct cells in either of the two populations. (default is 0.01)
+
+
+
+As end of the section, I saved the object as rds in case I have to restart from that step.
+
+```{r}
+# End of section 3, saved rds as a backout
+#saveRDS(combined_seurat, file = "/Users/adamadonyi/Downloads/GSE147821_combined_seurat_clusteres.rds")
+
+# remove previous object and free memory
+rm(combined_seurat)
+gc()
+```
+
+# SECTION_3: Generate the UMAP and perform cluster annotation.
+
+```{r}
+combined_seurat <- readRDS("/Users/adamadonyi/Downloads/GSE147821_combined_seurat_clusteres.rds")
+```
+
+```{r}
+# Visualization of all clusters (not annotated yet)
+DimPlot(combined_seurat, reduction = "umap")
+
+```
+
+Standard annotation method is using already established packages with reference data sets. The most heavily used and documented the singleR which is able to call different (human, mouse) references. The best method to handle human immune cells therefore I am familiar with the package but here HumanPrimaryCellAtlasData (which is the most general and broad library) failed to capture most of the cell types. After manual annotation I can confirm that singleR guessed correctly only 3 cell types. Leave the code here for reviewing in case I made some mistake, or adjustment is possible.
+
+```{r}
+#ref <- celldex::HumanPrimaryCellAtlasData()
+#colData(ref)
+
+#result <- SingleR(test = as.SingleCellExperiment(combined_seurat), ref = ref, labels = ref$label.main)
+
+#combined_seurat$singlr_labels <- result$labels
+
+#View(combined_seurat@meta.data)
+
+#saveRDS(combined_seurat, file = "/Users/adamadonyi/Downloads/GSE147821_combined_seurat_clusteres_singler.rds")
+#combined_seurat <- readRDS("/Users/adamadonyi/Downloads/GSE147821_combined_seurat_clusteres_singler.rds")
+#DimPlot(combined_seurat, reduction = "umap", group.by = 'singlr_labels', label = TRUE, repel = TRUE)
+
+```
+
+I approached the task manually based on the given reference paper, I was able to annotate all clusters, however, I think, my resolution was too high and sometimes I had to assigned 2 identified clusters to one cell type but I did it only after confirming via visualizing the cell type specific genes and clusters simultaneously. 
+
+
+
+```{r}
+Idents(combined_seurat) <- "seurat_clusters"
+```
+
+
+
+Cluster 0 with Endothelium markers
+
+```{r umap_combined_plots_0, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 0
+umap_highlight_0 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "0"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 0")
+
+# Feature plots for two marker genes
+feature_plot_0 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("PECAM1", "KDR")
+)
+
+# Combine them and display
+umap_highlight_0 + feature_plot_0
+
+```
+
+Cluster 1 with Adrenal gland cortex marker
+
+```{r umap_combined_plots_1, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 
+umap_highlight_1 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "1"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 1")
+
+# Feature plots for two marker genes
+feature_plot_1 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("NR5A1")
+)
+
+# Combine them and display
+umap_highlight_1 + feature_plot_1
+
+```
+
+Cluster 2 with Subepicardial and abdominal mesenchyme marker
+
+```{r umap_combined_plots_2, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 
+umap_highlight_2 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "2"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 2")
+
+# Feature plots for two marker genes
+feature_plot_2 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("PRRX1")
+)
+
+# Combine them and display
+umap_highlight_2 + feature_plot_2
+
+```
+Cluster 3 with the Erythroid cells marker
+```{r umap_combined_plots_3, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 0
+umap_highlight_3 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "3"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 3")
+
+# Feature plots for two marker genes
+feature_plot_3 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("HBA2", "HBB")
+)
+
+# Combine them and display
+umap_highlight_3 + feature_plot_3
+
+```
+Cluster 4 with the Erythroid cells marker
+
+```{r umap_combined_plots_4, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 0
+umap_highlight_4 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "4"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 4")
+
+# Feature plots for two marker genes
+feature_plot_4 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("HBA2", "HBB")
+)
+
+# Combine them and display
+umap_highlight_4 + feature_plot_4
+
+```
+
+Cluster 5 with Sympathoblasts marker
+
+```{r umap_combined_plots_5, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 0
+umap_highlight_5 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "5"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 5")
+
+# Feature plots for two marker genes
+feature_plot_5 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("STMN2")
+)
+
+# Combine them and display
+umap_highlight_5 + feature_plot_5
+
+```
+Cluster 6 with the Immune cell markers
+
+```{r umap_combined_plots_6, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 0
+umap_highlight_6 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "6"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 6")
+
+# Feature plots for two marker genes
+feature_plot_6 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("FCGR1A", "CD163")
+)
+
+# Combine them and display
+umap_highlight_6 + feature_plot_6
+
+```
+Cluster 7 with the Liver markers
+```{r umap_combined_plots_7, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 0
+umap_highlight_7 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "7"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 7")
+
+# Feature plots for two marker genes
+feature_plot_7 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("HNF4A", "AHSG"),
+)
+
+# Combine them and display
+umap_highlight_7 + feature_plot_7
+
+```
+Cluster 8 with "Chromaffin cell markers 
+```{r umap_combined_plots_8, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 0
+umap_highlight_8 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "8"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 8")
+
+# Feature plots for two marker genes
+feature_plot_8 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("ELAVL3", "ELAVL4", "PHOX2B", "TH")
+)
+
+# Combine them and display
+umap_highlight_8 + feature_plot_8
+```
+Cluster 9 with SCPs markers
+```{r umap_combined_plots_9, fig.width=12, fig.height=5}
+
+# UMAP with highlighted cluster 
+umap_highlight_9 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "9"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 9")
+
+# Feature plots for two marker genes
+feature_plot_9 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("SOX10", "PLP1", "FOXD3")
+)
+
+# Combine them and display
+umap_highlight_9 + feature_plot_9
+
+
+```
+
+Cluster 10 with Kidney marker 
+```{r umap_combined_plots_10, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 0
+umap_highlight_10 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "10"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 10")
+
+# Feature plots for two marker genes
+feature_plot_10 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("PAX2")
+)
+
+# Combine them and display
+umap_highlight_10 + feature_plot_10
+
+```
+Cluster 11 with Intermediate mesoderm
+```{r umap_combined_plots_11, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 0
+umap_highlight_11 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "11"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 11")
+
+# Feature plots for two marker genes
+feature_plot_11 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("GATA4", "HAND2")
+)
+
+# Combine them and display
+umap_highlight_11 + feature_plot_11
+
+```
+Cluster 12 with Erythroid cell markers
+```{r umap_combined_plots_12, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 0
+umap_highlight_12 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "12"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 12")
+
+# Feature plots for two marker genes
+feature_plot_12 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("HBA2", "HBB")
+)
+
+# Combine them and display
+umap_highlight_12 + feature_plot_12
+
+```
+Cluster 13 with Liver markers c("HNF4A", "AHSG"),
+```{r umap_combined_plots_13, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 0
+umap_highlight_13 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "13"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 13")
+
+# Feature plots for two marker genes
+feature_plot_13 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("HNF4A", "AHSG")
+)
+
+# Combine them and display
+umap_highlight_13 + feature_plot_13
+
+```
+Cluster 14 with Immune cells markers
+```{r umap_combined_plots_14, fig.width=12, fig.height=5}
+
+
+# UMAP 
+umap_highlight_14 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "14"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 14")
+
+# Feature plots for two marker genes
+feature_plot_14 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("FCGR1A", "CD163")
+)
+
+# Combine them and display
+umap_highlight_14 + feature_plot_14
+
+```
+Cluster 15 with Liver 
+```{r umap_combined_plots_15, fig.width=12, fig.height=5}
+
+
+# UMAP with highlighted cluster 0
+umap_highlight_15 <- DimPlot(
+  combined_seurat,
+  reduction = "umap",
+  cells.highlight = WhichCells(combined_seurat, idents = "15"),
+  cols.highlight = "black",
+  cols = "lightgrey"
+) + ggtitle("UMAP: Highlighting Cluster 15")
+
+# Feature plots for two marker genes
+feature_plot_15 <- FeaturePlot(
+  combined_seurat,
+  reduction = "umap",
+  features = c("HNF4A", "AHSG")
+)
+
+# Combine them and display
+umap_highlight_15 + feature_plot_15
+
+```
+
+Assign the identified cell types to the clusters and visualize.
+
+```{r}
+
+# Create a named vector for mapping cluster numbers to labels
+cluster_map <- c(
+  "0" = "Endothelium",
+  "1" = "Adrenal gland cortex",
+  "2" = "Subepicardial and abdominal mesenchyme",
+  "3" = "Erythroid cells",
+  "4" = "Erythroid cells",
+  "5" = "Sympathoblasts",
+  "6" = "Immune cells",
+  "7" = "Liver",
+  "8" = "Chromaffin cells",
+  "9" = "SCPs",
+  "10" = "Kindey",
+  "11" = "Intermediate mesoderm",
+  "12" = "Erythroid cells",
+  "13" = "Liver",
+  "14" = "Immune cells",
+  "15" = "Liver"
+)
+
+# Add the cluster_label column to the Seurat object using the mapping
+combined_seurat@meta.data$cluster_label <- cluster_map[combined_seurat@meta.data$seurat_clusters]
+
+Idents(combined_seurat) <- "cluster_label"
+DimPlot(combined_seurat, reduction = "umap", 
+        group.by = "cluster_label",  # Use your custom labels
+        label = TRUE, 
+        repel = TRUE) + 
+  NoLegend()
+
+```
+
+
+
+# SECTION_4: Visualization of differently expressed top 5 genes for each cluster
+
+
+Running FindAllMarkers provides the differently expressed genes comparing all clusters with all. It is commented out because I was not able to render my markdown to pdf keeping that line of code. I overloaded my RAM. But when I did it manually, during generating the notebook, I saved in xlsx format so I can re-load and use it for visualization. As I mentioned, I was focusing on only the positive ones. 
+
+```{r}
+#clusters.markers <- FindAllMarkers(combined_seurat, only.pos = TRUE)
+```
+
+
+
+```{r}
+# generate Excel to be able to use later
+#write_xlsx(clusters.markers, path = "clusters_markers.xlsx")
+clusters.markers <- read_excel("/Users/adamadonyi/Downloads/clusters_markers.xlsx")
+
+```
+
+
+```{r}
+colnames(clusters.markers)
+```
+
+
+Visualize the top 5 differently expressed genes of each cluster as DotPlot
+
+```{r expressed genes_plot, fig.width=12, fig.height=15}
+
+# Collect top 5 differently expressed genes for all clusters
+top_5_no_min <- clusters.markers %>% 
+  group_by(cluster) %>% 
+  slice_max(n = 5, order_by = avg_log2FC)
+
+
+
+DotPlot(combined_seurat, 
+        features = top_5_no_min$gene, 
+        group.by = "cluster_label") + 
+  coord_flip() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 0.5, size = 8), 
+    axis.text.y = element_text(hjust = 1, vjust = 0.5, size = 8)  
+  ) + 
+  labs(title = "Top Marker Genes by Cluster",
+       x = "Genes",
+       y = "Clusters")
+
+
+
+```
+
+# SECTION_5: Sub-select adrenal medulla clusters (Schwann cell precursors (SCPs), Chromaffin cells, Sympathoblasts) and re-cluster them to improve the resolution of transitions. Note that NOT all datasets may be included in the re-clustering.If you choose to do so, explain why that may be necessary.
+
+Saved the version in case I have to restart from that point.
+
+```{r}
+#saveRDS(combined_seurat, file = "/Users/adamadonyi/Downloads/GSE147821_combined_seurat_clusteres_annotated.rds")
+```
+
+```{r clear_environment}
+# Remove all objects from the environment
+rm(list = ls())
+
+
+
+# Optionally, you can force garbage collection
+gc()
+```
+
+```{r}
+# Load last object for further work
+combined_seurat <- readRDS("/Users/adamadonyi/Downloads/GSE147821_combined_seurat_clusteres_annotated.rds")
+
+```
+
+Before isolation of adrenal medulla cluster some steps are necessary to make sure we have a clean, balanced data set.
+1, remove doublets (scDblFinder)
+2, remove cell cycle related genes (similarly to the publication from 2021 Kameneva, https://doi.org/10.1038/s41588-021-00818-x, the similar approach considered to introduce the removal of certain cell cycle related genes. This has been done based on the "GO:0000278", "GO:0006260", "GO:0007049").
+3, remove cells with STAR genes expressed - which is cortex marker.
+
+
+```{r}
+# process is made on full dataset
+# Convert Seurat to SingleCellExperiment
+sce <- as.SingleCellExperiment(combined_seurat)
+
+# Run scDblFinder (with batch information))
+sce <- scDblFinder(sce, 
+                   samples = sce$orig.ident,  # This tells the function about your samples
+                   dbr = NULL,  # Let the function estimate doublet rates per sample
+                   dims = 30)  # Return all scores and info
+
+# Add results back to Seurat object
+combined_seurat$scDblFinder_score <- sce$scDblFinder.score
+combined_seurat$scDblFinder_class <- sce$scDblFinder.class
+combined_seurat$scDblFinder_keep <- sce$scDblFinder.class == "singlet"
+
+DimPlot(combined_seurat, reduction = "umap", group.by = 'scDblFinder_keep', label = FALSE, repel = TRUE) 
+
+
+```
+
+```{r}
+# distribution of doublets and siglets along the full dataset
+doublet_table <- table(combined_seurat$scDblFinder_class)
+print(doublet_table)
+
+```
+
+singlet doublet 
+  67728    4245 
+Which is a reasonable ratio since with 10X platform we can expect doublets between 1-10% depending on the samples.
+
+Computationally impossible to process the cell-cycle-related-genes removal step on the full data set therefore I isolate first the populations of our interest and continue with them.
+
+```{r}
+# isolation of "Sympathoblasts", "Chromaffin cells" and "SCPs" 
+# First, check the identities
+table(Idents(combined_seurat))
+colnames(combined_seurat@meta.data)
+Idents(combined_seurat) <- "cluster_label"
+
+# Subset the object
+sub_seurat <- subset(combined_seurat, idents = c("Sympathoblasts", "Chromaffin cells", "SCPs"))
+# Inspect the content of sub setted data
+doublet_table <- table(sub_seurat$scDblFinder_class)
+print(doublet_table)
+table(Idents(sub_seurat))
+```
+The isolated populations consist of decent amount of cells for further analysis and the singlet doublet ratio is also good. 
+
+As next step, I used the reference cell cycle related GO terms and their genes to remove from my data set.
+
+```{r}
+# Get genes associated with cell cycle GO terms
+cell_cycle_go_terms <- c("GO:0000278", "GO:0006260", "GO:0007049")
+cell_cycle_genes <- unique(unlist(lapply(cell_cycle_go_terms, function(go_term) {
+  genes <- AnnotationDbi::select(org.Hs.eg.db, 
+                                 keys = go_term,
+                                 columns = c("SYMBOL"), 
+                                 keytype = "GOALL")$SYMBOL
+  return(genes)
+})))
+
+# Print how many cell cycle genes were found
+print(paste0("Number of cell cycle genes found: ", length(cell_cycle_genes)))
+```
+
+1849 cell cycle related genes are in total from the 3 GOs.
+
+```{r}
+# Get the current genes in your Seurat object
+current_genes <- rownames(sub_seurat)
+
+# Find overlap between your datasets and cell cycle genes
+cc_genes_in_data <- intersect(current_genes, cell_cycle_genes)
+print(paste0("Number of cell cycle genes in your dataset: ", length(cc_genes_in_data)))
+
+# Create a new Seurat object without cell cycle genes!
+genes_to_keep <- setdiff(current_genes, cc_genes_in_data)
+sub_seurat_no_cc <- subset(sub_seurat, features = genes_to_keep)
+
+# Compare the number of genes before and after
+print(paste0("Genes before filtering: ", nrow(sub_seurat)))
+print(paste0("Genes after filtering: ", nrow(sub_seurat_no_cc)))
+```
+
+1700 genes have been found in the data set and removed. Confirmed by the before after gene number.
+
+According to the reference paper, genes with high correlation with "MKI67", "TOP2A", "TUBB4B" (based on pearson correlation) also nice to be removed. I had total 4 related genes with those, but these genes were removed after the previous section anyway. (method/code not shown here)
+
+Additionally, focusing on adrenal medulla cluster, removing the STAR gene "contaminated" events is also beneficial since STAR gene usually expressed in cortex.
+
+After sub setting the STAR positive cells the isolated clusters are free from STAR gene.
+
+```{r}
+# Direct approach using subset
+sub_seurat_no_cc <- subset(sub_seurat_no_cc, subset = STAR == 0)
+FeaturePlot(sub_seurat_no_cc, reduction = "umap", features = c("STAR"))
+```
+From that point the isolated, cleaned sub-clusters is in the focus. The next step is to implement the standard scRNAseq pipeline on the isolated data set.
+
+```{r}
+sub_seurat_no_cc <- NormalizeData(sub_seurat_no_cc, normalization.method = "LogNormalize", scale.factor = 10000)
+
+# 2. Find variable features
+sub_seurat_no_cc <- FindVariableFeatures(sub_seurat_no_cc, selection.method = "vst", nfeatures = 2000)
+
+# 3. Scale the data
+sub_seurat_no_cc <- ScaleData(sub_seurat_no_cc)
+
+# 4. Run PCA - as per paper, they used 30 components
+sub_seurat_no_cc <- RunPCA(sub_seurat_no_cc)
+
+# 5. Determine significant PCs --> use the 3
+ElbowPlot(sub_seurat_no_cc)
+
+# important step - tested without 
+sub_seurat_no_cc <- FindNeighbors(sub_seurat_no_cc, dims = 1:3)
+sub_seurat_no_cc <- FindClusters(sub_seurat_no_cc, resolution = 0.1)
+
+# 6 Run UMAP
+sub_seurat_no_cc <- RunUMAP(sub_seurat_no_cc, dims = 1:3)
+
+
+```
+
+
+Beside of removing the doublets, I decided to remove the extra adrenal labelled sample since we focus on the non-extra-adrenal cells, furthermore continued the analysis without the paraganglia labelled sample because it is not part of the sympatho-adrenal section and could mask important genes.
+
+```{r}
+# Subset to exclude unwanted samples (mentioned  - 2) and remove doublets
+sub_seurat_no_cc <- subset(
+  sub_seurat_no_cc,
+  subset = orig.ident != "week12_036_extraadrenal" &
+           orig.ident != "week9_031_paraganglia" &
+           scDblFinder_keep == TRUE
+)
+
+```
+
+  
+Visualization to check populations and samples after filtering step. Moreover, checking the cell cycle status of population. Proliferating sympthatoblasts are present! 
+  
+```{r}
+# UMAP colored by sample 
+p1 <- DimPlot(sub_seurat_no_cc, 
+              reduction = "umap", 
+              group.by = "orig.ident", 
+              pt.size = 0.3) + 
+  ggtitle("UMAP: Samples") +
+  theme(
+    plot.title = element_text(size = 12)
+  )
+
+# UMAP colored by clusters 
+p2 <- DimPlot(sub_seurat_no_cc, 
+              reduction = "umap", 
+              group.by = "cluster_label",
+              label = TRUE, 
+              repel = TRUE,
+              pt.size = 0.3) + 
+  ggtitle("UMAP: Clusters") +
+  theme(
+    plot.title = element_text(size = 12),
+    legend.position = "none"
+  )
+
+# Combine plots side by side
+p1 + p2 + 
+  plot_layout(ncol = 2)
+```
+
+
+```{r}
+DimPlot(sub_seurat_no_cc, reduction = "umap", group.by = 'Phase', label = FALSE, repel = TRUE) 
+
+```
+
+Saved as a backup step here.
+```{r}
+# save sub_seurat object and empty environment
+#saveRDS(sub_seurat_no_cc, file = "/Users/adamadonyi/Downloads/GSE147821_combined_seurat_clusteres_annotated_sub_clean.rds")
+```
+
+Cleaned memory to be able to render the pdf
+
+```{r}
+
+
+rm(list = ls())
+
+# Optionally, you can force garbage collection
+gc()
+
+sub_seurat_no_cc <- readRDS("/Users/adamadonyi/Downloads/GSE147821_combined_seurat_clusteres_annotated_sub_clean.rds")
+
+
+```
+
+
+# SECTION_6.A: trajectory analysis and heatmap.
+6a. Perform the trajectory analysis between SCPs and chromaffin cells, SCPs and
+sympathoblasts, and between chromaffin cells and sympathoblasts.
+Plot the important gene changes along the trajectories on heatmaps.
+You can use any trajectory analysis tool. Please explain your choice.
+
+After re running the basic pipeline of scRNAseq 
+
+```{r}
+sub_seurat_no_cc <- NormalizeData(sub_seurat_no_cc)
+
+
+# 2. Find variable features
+sub_seurat_no_cc <- FindVariableFeatures(sub_seurat_no_cc)
+
+# 3. Scale the data
+sub_seurat_no_cc <- ScaleData(sub_seurat_no_cc)
+
+# 4. Run PCA - as per paper, they used 30 components
+sub_seurat_no_cc <- RunPCA(sub_seurat_no_cc)
+
+# 5. Determine significant PCs --> use the 3
+elb <- ElbowPlot(sub_seurat_no_cc)
+
+# important step - tested without 
+sub_seurat_no_cc <- FindNeighbors(sub_seurat_no_cc, dims = 1:10)
+sub_seurat_no_cc <- FindClusters(sub_seurat_no_cc, resolution = 0.1)
+
+# 6 Run UMAP
+sub_seurat_no_cc <- RunUMAP(sub_seurat_no_cc, dims = 1:10)
+
+```
+
+According to the reference paper Conos integration was performed (with parameters k=30, k.self=5 and 30 PCA components) on the dataset. 
+This analysis integrates scRNA-seq data across samples using Conos, followed by UMAP visualization and trajectory inference with Slingshot on all cell types. 
+Differential gene expression along pseudotime is assessed using tradeSeq, identifying genes dynamically regulated in each lineage transition. 
+A ternary analysis computes signature scores for each cell type and orders cells by transition gradients to visualize lineage-specific gene expression patterns. 
+Heatmaps of marker and pseudotime-responsive genes shows molecular trajectories of neurodevelopmental transitions.
+
+
+
+
+
+```{r}
+
+# Extract cell type information for later use
+cell_types <- sub_seurat_no_cc$cluster_label
+
+
+# Split the Seurat object by sample/batch
+seurat_list <- SplitObject(sub_seurat_no_cc, split.by = "gsm")  # Assuming 'gsm' is your batch identifier
+
+# Convert each Seurat object to pagoda2
+p2_list <- lapply(seurat_list, function(x) {
+  # Extract count
+  counts <- GetAssayData(x, slot = "counts")
+  
+  # Create pagoda2 object
+  p2 <- pagoda2::Pagoda2$new(counts, log.scale = TRUE, n.cores = 4)
+  
+  # Process pagoda2 object
+  p2$adjustVariance(plot = FALSE)
+  p2$calculatePcaReduction(nPcs = 30, n.odgenes = 3000)
+  
+  return(p2)
+})
+
+# Create Conos object
+con <- conos::Conos$new(p2_list)
+
+# Run Conos integration with specified parameters from the paper
+# k=30, k.self=5 and 30 PCA components
+con$buildGraph(k = 30, k.self = 5, space = "PCA", ncomps = 30)
+
+# Calculate UMAP embedding
+con$embedGraph(method = "UMAP", n.neighbors = 200)  # Using 200 neighbors as specified
+
+# Get the joint graph and UMAP embedding
+joint_graph <- con$graph
+umap_embedding <- con$embedding
+
+# Create a new Seurat object with integrated data
+# Extract the cell embeddings
+cell_embeddings <- con$embedding
+
+# Create a new dimensional reduction object for Seurat 
+umap_reduction <- CreateDimReducObject(
+  embeddings = cell_embeddings,
+  key = "UMAP_",
+  assay = DefaultAssay(sub_seurat_no_cc)
+)
+
+# Add the UMAP reduction to the Seurat object
+sub_seurat_no_cc[["umap"]] <- umap_reduction
+
+# Add back the original cell type 
+sub_seurat_no_cc$cell_type <- cell_types
+
+# Visualize the UMAP with cell types
+p1 <- DimPlot(sub_seurat_no_cc, reduction = "umap", group.by = "cluster_label")
+print(p1)
+
+# Convert to SingleCellExperiment for slingshot
+sce <- as.SingleCellExperiment(sub_seurat_no_cc)
+
+# Use the UMAP embedding from Conos
+reducedDims(sce)[["UMAP"]] <- cell_embeddings
+
+# Add normalized counts if not already present<-make sure
+if (!"logcounts" %in% assayNames(sce)) {
+  sce <- logNormCounts(sce)
+}
+
+# Filter for cells
+sce_subset <- sce[, sce$cluster_label %in% c("Sympathoblasts", "Chromaffin cells", "SCPs")]
+
+#  markers from literature
+marker_genes <- list(
+  SCP = c("SOX10", "PLP1", "FOXD3", "FABP7", "S100B", "ERBB3", "NGFR", 
+          "MBP", "MPZ", "COL2A1", "POSTN", "MOXD1", "GAS7"),
+  
+  Sympathoblasts = c("STMN2", "HAND2", "ELAVL4", "STMN4", "ISL1", 
+                     "PRPH", "ELAVL2", "HMX1"),
+  
+  Chromaffin = c("GAS7", "CHGA", "CHGB", "INSM1", "PENK", "PNMT", "SLC35D3")
+)
+
+
+# gene expression changes along trajectory - main Function<----------------------------
+analyze_trajectory <- function(sce_obj, trajectory_name) {
+  # Get pseudotime values for the first lineage
+  pseudotime <- sce_obj$slingPseudotime_1
+  
+  # Print vector length and Number of NA for pseudotime
+  cat("Initial pseudotime vector length:", length(pseudotime), "\n")
+  cat("Number of NA values in pseudotime:", sum(is.na(pseudotime)), "\n")
+  
+  # Filter cells with NA pseudotime (if any!!!)
+  valid_cells <- !is.na(pseudotime)
+  sce_filtered <- sce_obj[, valid_cells]
+  pseudotime <- pseudotime[valid_cells]
+  
+  cat("After filtering, pseudotime vector length:", length(pseudotime), "\n")
+  
+  # Get normalized counts for valid cells 
+  if ("logcounts" %in% assayNames(sce_filtered)) {
+    counts <- assay(sce_filtered, "logcounts")
+  } else {
+    # If logcounts don't exist, normalize and log-transform <---- error suggested then worked
+    sce_filtered <- logNormCounts(sce_filtered)
+    counts <- assay(sce_filtered, "logcounts")
+  }
+  
+  cat("Number of cells in count matrix:", ncol(counts), "\n")
+  
+  # Create cell weights vector with the same length as pseudotime
+  cell_weights <- rep(1, length(pseudotime))
+  
+  cat("Length of cell_weights vector:", length(cell_weights), "\n")
+  
+    # has the same length as the number of cells
+  pseudotime_matrix <- matrix(NA, nrow = ncol(counts), ncol = 1)
+  pseudotime_matrix[, 1] <- pseudotime
+  
+  # TradeSeq expects a list of pseudotime values per lineag
+  lineages <- list(Lineage1 = pseudotime)
+  
+  # Print information about the structure
+  cat("Structure of lineages object:\n")
+  cat("  - Number of lineages:", length(lineages), "\n")
+  cat("  - Length of Lineage1:", length(lineages[[1]]), "\n")
+  
+  # Double-check dimensions!!!
+  if (length(cell_weights) != length(lineages[[1]])) {
+    stop("Dimension mismatch: cell_weights (", length(cell_weights), 
+         ") and pseudotime (", length(lineages[[1]]), ") have different lengths")
+  }
+  
+  if (ncol(counts) != length(lineages[[1]])) {
+    stop("Dimension mismatch: counts (", ncol(counts), 
+         " columns) and pseudotime (", length(lineages[[1]]), " values) have different lengths")
+  }
+  
+  # Fit GAM
+  set.seed(42) 
+  
+  # Try using a simpler approach first with fewer knots (only solution for previous 303 error)
+  tryCatch({
+    cat("Fitting GAM model with tradeSeq...\n")
+    gam_fits <- fitGAM(counts = counts, 
+                       pseudotime = lineages,
+                       cellWeights = cell_weights,
+                       verbose = TRUE,
+                       parallel = FALSE, # Set to FALSE to avoid parallel issues
+                       nknots = 3) # Start with fewer knots for simplicity
+    
+    cat("GAM model fitted successfully!\n")
+    
+    # Test for genes that change
+    cat("Testing for genes associated with pseudotime...\n")
+    assoc_res <- associationTest(gam_fits)
+    
+    # Get significantly changing genes 0.05for p
+    sig_genes <- rownames(assoc_res)[assoc_res$pvalue < 0.05]
+    cat("Number of significant genes (p < 0.05):", length(sig_genes), "\n")
+    
+    # If too many significant genes, take TOP1000
+    if (length(sig_genes) > 100) {
+      sig_genes <- rownames(assoc_res)[order(assoc_res$pvalue)][1:100]
+      cat("Taking top 100 significant genes\n")
+    }
+    
+    # If no significant genes, use top 50 genes via variance
+    if (length(sig_genes) == 0) {
+      cat("No significant genes found, using top 50 by variation\n")
+      var_genes <- rowVars(counts)
+      sig_genes <- names(sort(var_genes, decreasing = TRUE))[1:50]
+    }
+    
+    # Predict expression along trajectory for visual
+    cat("Predicting gene expression along trajectory...\n")
+    pseudotime_seq <- seq(min(pseudotime, na.rm = TRUE),
+                         max(pseudotime, na.rm = TRUE),
+                         length.out = 100)
+    
+    # Use tradeSeq's predictSmooth
+    pred_counts <- predictSmooth(gam_fits, 
+                                gene = sig_genes,
+                                pseudotimes = list(Lineage1 = pseudotime_seq),
+                                nPoints = 100)
+    
+    # Scale each gene for better visual
+    pred_counts_scaled <- t(scale(t(pred_counts)))
+    
+    # Create heatmap 
+    gene_order <- order(apply(pred_counts, 1, which.max))
+    
+    # Create heatmap
+    cat("Creating heatmap...\n")
+    heatmap_title <- paste("Genes changing along", trajectory_name)
+    heat_map <- pheatmap(pred_counts_scaled[gene_order, ], 
+                       cluster_rows = FALSE, 
+                       cluster_cols = FALSE,
+                       show_colnames = FALSE,
+                       main = heatmap_title, # needed to add!!!!
+                       labels_row = rownames(pred_counts_scaled)[gene_order])
+    
+    # Return results
+    cat("Analysis complete!\n")
+    return(list(
+      significant_genes = sig_genes,
+      heatmap = heat_map,
+      predicted_expression = pred_counts_scaled[gene_order, ]
+    ))
+  }, error = function(e) {
+    cat("Error occurred during analysis:", conditionMessage(e), "\n")
+    cat("Attempting alternative approach...\n")
+    
+    # Sort cells by pseudotime
+    cell_order <- order(pseudotime)
+    cell_position <- seq_along(pseudotime) / length(pseudotime)
+    
+    # Create a simple heatmap of the top variable genes
+    var_genes <- rowVars(counts)
+    top_var_genes <- names(sort(var_genes, decreasing = TRUE))[1:50]
+    
+    # Extract and scale expression
+    top_gene_expr <- counts[top_var_genes, ]
+    top_gene_expr_scaled <- t(scale(t(top_gene_expr)))
+    
+    # Create heatmap
+    heatmap_title <- paste("Top variable genes along", trajectory_name, "(alternative method)")
+    heat_map <- pheatmap(top_gene_expr_scaled[, cell_order], 
+                       cluster_rows = TRUE, 
+                       cluster_cols = FALSE,
+                       show_colnames = FALSE,
+                       main = heatmap_title)
+    
+    return(list(
+      message = paste("Original analysis failed with error:", conditionMessage(e)),
+      significant_genes = top_var_genes,
+      heatmap = heat_map
+    ))
+  })
+}
+
+# Create a function to generate heatmap 
+create_transition_heatmap <- function(sce_obj, marker_genes, transition_name) {
+  # Get expression data
+  if ("logcounts" %in% assayNames(sce_obj)) {
+    expr <- assay(sce_obj, "logcounts")
+  } else {
+    sce_obj <- logNormCounts(sce_obj)
+    expr <- assay(sce_obj, "logcounts")
+  }
+  
+  # Flatten the marker genes list
+  all_markers <- unlist(marker_genes)
+  
+  # Keep only genes in our dataset
+  valid_markers <- intersect(all_markers, rownames(expr))
+  
+  # Get expression for marker genes
+  marker_expr <- expr[valid_markers, ]
+  
+  # Scale expression
+  marker_expr_scaled <- t(scale(t(marker_expr)))
+  
+  # Create heatmap
+  heatmap_title <- paste("Marker genes in", transition_name, "transition")
+  heat_map <- pheatmap(marker_expr_scaled,
+                      cluster_rows = TRUE,
+                      cluster_cols = FALSE,
+                      show_colnames = FALSE,
+                      main = heatmap_title)
+  
+  return(heat_map)
+}
+
+# 1. SCPs to Chromaffin cells
+sce_scp_chrom <- sce_subset[, sce_subset$cluster_label %in% c("SCPs", "Chromaffin cells")]
+sce_scp_chrom <- slingshot(sce_scp_chrom, clusterLabels = 'cluster_label', 
+                          reducedDim = 'UMAP', start.clus = 'SCPs')
+
+# 2. SCPs to Sympathoblasts
+sce_scp_symp <- sce_subset[, sce_subset$cluster_label %in% c("SCPs", "Sympathoblasts")]
+sce_scp_symp <- slingshot(sce_scp_symp, clusterLabels = 'cluster_label', 
+                         reducedDim = 'UMAP', start.clus = 'SCPs')
+
+# 3. Chromaffin cells to Sympathoblasts
+sce_chrom_symp <- sce_subset[, sce_subset$cluster_label %in% c("Chromaffin cells", "Sympathoblasts")]
+sce_chrom_symp <- slingshot(sce_chrom_symp, clusterLabels = 'cluster_label', 
+                           reducedDim = 'UMAP', start.clus = 'Chromaffin cells')
+
+# Trajectories
+# For SCPs to Chromaffin cells
+colors <- colorRampPalette(c("#E0E0E0", "#0000AA"))(100)
+plot(reducedDims(sce_scp_chrom)[["UMAP"]][,c(1,2)], 
+     col = colors[cut(sce_scp_chrom$slingPseudotime_1, breaks=100)],
+     pch=16, cex=0.5, 
+     main="Trajectory: SCPs to Chromaffin cells")
+lines(SlingshotDataSet(sce_scp_chrom), lwd=2, col="black")
+
+# For SCPs to Sympathoblasts
+plot(reducedDims(sce_scp_symp)[["UMAP"]][,c(1,2)], 
+     col = colors[cut(sce_scp_symp$slingPseudotime_1, breaks=100)],
+     pch=16, cex=0.5, 
+     main="Trajectory: SCPs to Sympathoblasts")
+lines(SlingshotDataSet(sce_scp_symp), lwd=2, col="black")
+
+# For Chromaffin cells to Sympathoblasts
+plot(reducedDims(sce_chrom_symp)[["UMAP"]][,c(1,2)], 
+     col = colors[cut(sce_chrom_symp$slingPseudotime_1, breaks=100)],
+     pch=16, cex=0.5, 
+     main="Trajectory: Chromaffin cells to Sympathoblasts")
+lines(SlingshotDataSet(sce_chrom_symp), lwd=2, col="black")
+
+# analysis for each transition
+# 1. SCPs to Chromaffin cells
+scp_chrom_results <- analyze_trajectory(sce_scp_chrom, "SCPs to Chromaffin cells")
+
+# 2. SCPs to Sympathoblasts
+scp_symp_results <- analyze_trajectory(sce_scp_symp, "SCPs to Sympathoblasts")
+
+# 3. Chromaffin cells to Sympathoblasts
+chrom_symp_results <- analyze_trajectory(sce_chrom_symp, "Chromaffin cells to Sympathoblasts")
+
+# Perform ternary analysis as described in the paper
+perform_ternary_analysis <- function(sce_obj, marker_genes) {
+  # Get expression data
+  if ("logcounts" %in% assayNames(sce_obj)) {
+    expr <- assay(sce_obj, "logcounts")
+  } else {
+    sce_obj <- logNormCounts(sce_obj)
+    expr <- assay(sce_obj, "logcounts")
+  }
+  
+  # Calculate signature scores for each cell type
+  calc_signature_score <- function(gene_list) {
+    # Keep only genes in the dataset
+    valid_genes <- intersect(gene_list, rownames(expr))
+    if (length(valid_genes) == 0) {
+      return(rep(0, ncol(expr)))
+    }
+    # Sum exp values
+    colSums(expr[valid_genes, , drop = FALSE])
+  }
+  
+  # Calculate scores
+  scp_score <- calc_signature_score(marker_genes$SCP)
+  symp_score <- calc_signature_score(marker_genes$Sympathoblasts)
+  chrom_score <- calc_signature_score(marker_genes$Chromaffin)
+  
+  # Scores to metadata
+  sce_obj$scp_score <- scp_score
+  sce_obj$symp_score <- symp_score
+  sce_obj$chrom_score <- chrom_score
+  
+  # Calculate ratios for ordering (following paper methodology)
+  total_score <- scp_score + symp_score + chrom_score
+  sce_obj$chrom_ratio <- chrom_score / total_score
+  
+  # For SCP to Sympathoblast transition (as in Fig 2h)
+  # Select cells where chromaffin signature is not dominant
+  # Handle NAs by replacing them with FALSE!!!!
+  chrom_filter <- sce_obj$chrom_ratio <= 0.7
+  chrom_filter[is.na(chrom_filter)] <- FALSE
+  
+  scp_to_symp <- sce_obj[, chrom_filter]
+  
+  # Calculate ratio only for filtered cells
+  symp_to_sum <- scp_to_symp$symp_score / (scp_to_symp$symp_score + scp_to_symp$scp_score)
+  # Handle division by zero or other NAs
+  symp_to_sum[is.na(symp_to_sum)] <- 0
+  scp_to_symp$symp_to_sum_ratio <- symp_to_sum
+  
+  # Order cells by this ratio
+  cell_order <- order(scp_to_symp$symp_to_sum_ratio)
+  
+  # Similar analysis for SCP to Chromaffin transition
+  # Handle NAs in the filter
+  symp_filter <- sce_obj$symp_score / total_score <= 0.7
+  symp_filter[is.na(symp_filter)] <- FALSE
+  
+  scp_to_chrom <- sce_obj[, symp_filter]
+  
+  # Calculate ratio only for filtered cells
+  chrom_to_sum <- scp_to_chrom$chrom_score / (scp_to_chrom$chrom_score + scp_to_chrom$scp_score)
+  # Handle division by zero or other NAs
+  chrom_to_sum[is.na(chrom_to_sum)] <- 0
+  scp_to_chrom$chrom_to_sum_ratio <- chrom_to_sum
+  
+  chrom_cell_order <- order(scp_to_chrom$chrom_to_sum_ratio)
+  
+  # And for Sympathoblast to Chromaffin transition (as in Fig 3b)
+  # Handle NAs in the filter
+  scp_filter <- sce_obj$scp_score / total_score <= 0.7
+  scp_filter[is.na(scp_filter)] <- FALSE
+  
+  symp_to_chrom <- sce_obj[, scp_filter]
+  
+  # Calculate ratio only for filtered cells
+  chrom_to_symp <- symp_to_chrom$chrom_score / (symp_to_chrom$chrom_score + symp_to_chrom$symp_score)
+  # Handle division by zero or other NAs
+  chrom_to_symp[is.na(chrom_to_symp)] <- 0
+  symp_to_chrom$chrom_to_symp_ratio <- chrom_to_symp
+  
+  symp_chrom_cell_order <- order(symp_to_chrom$chrom_to_symp_ratio)
+  
+  # Return the ordered cells for each transition
+  return(list(
+    scp_to_symp = scp_to_symp[, cell_order],
+    scp_to_chrom = scp_to_chrom[, chrom_cell_order],
+    symp_to_chrom = symp_to_chrom[, symp_chrom_cell_order]
+  ))
+}
+
+# Execute the ternary analysis (this was missing in the original code)
+ternary_results <- perform_ternary_analysis(sce_subset, marker_genes)
+
+#  create the heatmaps
+scp_to_symp_heatmap <- create_transition_heatmap(ternary_results$scp_to_symp, marker_genes, "SCP to Sympathoblast")
+scp_to_chrom_heatmap <- create_transition_heatmap(ternary_results$scp_to_chrom, marker_genes, "SCP to Chromaffin")
+symp_to_chrom_heatmap <- create_transition_heatmap(ternary_results$symp_to_chrom, marker_genes, "Sympathoblast to Chromaffin")
+
+# Extract top genes from each transition
+top_genes_per_transition <- list(
+  SCPs_to_Chromaffin = head(scp_chrom_results$significant_genes, 10),
+  SCPs_to_Sympathoblasts = head(scp_symp_results$significant_genes, 10),
+  Chromaffin_to_Sympathoblasts = head(chrom_symp_results$significant_genes, 10)
+)
+
+# Create a summary table
+cat("Top genes changing in each transition:\n")
+for (transition in names(top_genes_per_transition)) {
+  cat("\n", transition, ":\n")
+  cat(paste(top_genes_per_transition[[transition]], collapse = ", "), "\n")
+}
+
+
+```
+
+The umap shows only the 3 cell types we were interested. 
+
+Trajectory graphs are color coded the pseudotime and the Singleshot provided line represent the most likely path cells take during differentiation.
+
+
+SCP to Chromaffin cells: gradually acquire chromaffin-like-cell identity through a relatively direct developmental trajectory.
+
+SCP to Sympathoblasts:The curve has a distinct shape compared to the chromaffin trajectory, indicating these are separate developmental programs with different gene expression patterns. The pronounced curve suggests intermediate cell states may play important roles in this transition
+
+Chromaffin cells to Sympathoblasts: We can assume based on the plot there is a relationship between chromaffin cells and sympathoblasts. The trajectory suggests these cell types might share developmental history but diverge along different paths.
+
+Hatmap of marker genes shows the key  signature genes to investigate potential transitions over pseudotime.
+
+SCP to Sympathoblast Transition: Expression of SCPs markers such as SOX10, FOXD3, POSTN  decrease moving rightward.Genes like STMN2, HAND2, ELAVL4, and HMX1 show increased expression toward the right side demonstrating the acquired Sympathoblast properties.  This indicates a clear developmental trajectory from SCPs (left) to Sympathoblasts (right) with a gradual loss of SCP identity genes and gain of sympathoblast markers.
+
+SCP to Chromaffin Transition: Similar to first heatmap, SCP markers like SOX10, FOXD3, POSTN show high expression on the left and decrease toward the right.Genes like CHGA, CHGB, PNMT, PENK show low expression in SCPs but increased expression on the right, representing chromaffin differentiation. This transition demonstrates a different cellular fate from the same SCP progenitors, with the acquisition of chromaffin-specific markers.
+
+
+Sympathoblast to Chromaffin Transition:
+HAND2, HMX1, ISL1 are highly expressed on the left (sympathoblasts). Chromaffin markers such as CHGA, CHGB, PNMT, PENK increase toward the right side (middle section of the heatmap) This suggests potential plasticity between sympathoblast and chromaffin fates, which is interesting from a developmental perspective.
+
+
