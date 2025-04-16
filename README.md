@@ -19,7 +19,6 @@ Accession Number: [GSE147821](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc
 Description: The dataset contains samples from different developmental stages (e.g., week 6 to week 14) of human adrenal gland development.
  Each sample name indicates the developmental stage (e.g., week8_001 corresponds to week 8 of development with internal ID 001). Some developmental stages have replicates.
 
- Pipeline Description
 
 # The pipeline:
 
